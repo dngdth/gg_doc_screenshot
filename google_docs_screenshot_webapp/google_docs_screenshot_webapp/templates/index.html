@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Docs Screenshot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container wide">
+        <header>
+            <h1>📄 Google Docs Page Screenshot</h1>
+            <p class="subtitle">Nhập link Google Docs công khai → chụp ảnh từng trang thành PNG</p>
+        </header>
+
+        <div class="layout-grid">
+            <section class="card">
+                <form id="capture-form">
+                    <label for="docs_url">🔗 Link Google Docs:</label>
+                    <input
+                        type="url"
+                        id="docs_url"
+                        name="docs_url"
+                        placeholder="https://docs.google.com/document/d/xxxxxxx/edit"
+                        required
+                    >
+                    <button type="submit" id="btn">📸 Bắt đầu chụp</button>
+                </form>
+
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p id="loading-text">Đang xử lý...</p>
+                </div>
+            </section>
+
+            <aside class="card progress-card">
+                <h2>🧭 Tiến trình</h2>
+                <div id="current-step" class="current-step">Chưa bắt đầu</div>
+                <div id="progress-log" class="progress-log empty">
+                    <div class="empty-state">
+                        Tiến trình sẽ hiện ở đây, ví dụ: đã truy cập web, đã chụp trang 1, 2, 3...
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <section id="result-card" class="card hidden">
+            <h2 id="result-title">Kết quả</h2>
+            <div id="result-error" class="error-box hidden"><p></p></div>
+
+            <div class="info-row">
+                <span class="label">Document ID:</span>
+                <code id="result-doc-id">-</code>
+            </div>
+            <div class="info-row">
+                <span class="label">Thư mục:</span>
+                <code id="result-output-dir">-</code>
+            </div>
+            <div class="info-row">
+                <span class="label">Số trang đã chụp:</span>
+                <strong id="result-pages">0</strong>
+            </div>
+
+            <div class="files">
+                <h3>Danh sách file ảnh</h3>
+                <div id="file-grid" class="file-grid"></div>
+            </div>
+        </section>
+
+        <section class="card notes">
+            <h3>⚠️ Lưu ý</h3>
+            <ul>
+                <li>Chỉ hỗ trợ tài liệu <strong>công khai</strong> hoặc tài khoản đang đăng nhập có quyền hợp lệ.</li>
+                <li>App <strong>không bypass</strong> quyền truy cập.</li>
+                <li>Nếu thất bại, thư mục output có thể chứa file debug như <code>debug_dom.html</code> và <code>debug_full_page.png</code>.</li>
+            </ul>
+        </section>
+    </div>
+
+    <script>
+        const form = document.getElementById('capture-form');
+        const btn = document.getElementById('btn');
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+        const progressLog = document.getElementById('progress-log');
+        const currentStep = document.getElementById('current-step');
+        const resultCard = document.getElementById('result-card');
+        const resultTitle = document.getElementById('result-title');
+        const resultError = document.getElementById('result-error');
+        const resultErrorText = resultError.querySelector('p');
+        const resultDocId = document.getElementById('result-doc-id');
+        const resultOutputDir = document.getElementById('result-output-dir');
+        const resultPages = document.getElementById('result-pages');
+        const fileGrid = document.getElementById('file-grid');
+        const docsInput = document.getElementById('docs_url');
+
+        let pollTimer = null;
+        let lastProgressLength = 0;
+
+        function setBusy(isBusy) {
+            btn.disabled = isBusy;
+            btn.textContent = isBusy ? '⏳ Đang xử lý...' : '📸 Bắt đầu chụp';
+            loading.classList.toggle('hidden', !isBusy);
+        }
+
+        function appendProgress(lines) {
+            if (!lines.length) return;
+            progressLog.classList.remove('empty');
+
+            const frag = document.createDocumentFragment();
+            lines.forEach(line => {
+                const item = document.createElement('div');
+                item.className = 'progress-item';
+                item.textContent = line;
+                frag.appendChild(item);
+            });
+
+            progressLog.appendChild(frag);
+            progressLog.scrollTop = progressLog.scrollHeight;
+        }
+
+        function renderResult(job) {
+            resultCard.classList.remove('hidden');
+            resultCard.classList.toggle('success', job.success);
+            resultCard.classList.toggle('failure', !job.success);
+
+            resultTitle.textContent = job.success ? '✅ Thành công' : '❌ Thất bại';
+            resultDocId.textContent = job.doc_id || '-';
+            resultOutputDir.textContent = job.output_dir || '-';
+            resultPages.textContent = job.pages_captured || 0;
+
+            if (job.error) {
+                resultError.classList.remove('hidden');
+                resultErrorText.textContent = job.error;
+            } else {
+                resultError.classList.add('hidden');
+                resultErrorText.textContent = '';
+            }
+
+            fileGrid.innerHTML = '';
+            (job.files || []).forEach(file => {
+                const span = document.createElement('span');
+                span.className = 'file-item';
+                span.textContent = '🖼️ ' + file;
+                fileGrid.appendChild(span);
+            });
+        }
+
+        async function pollStatus(jobId) {
+            try {
+                const res = await fetch(`/status/${jobId}`);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    throw new Error(data.error || 'Không lấy được trạng thái job.');
+                }
+
+                const job = data.job;
+                currentStep.textContent = job.step || 'Đang xử lý...';
+                loadingText.textContent = job.step || 'Đang xử lý...';
+
+                const newLines = (job.progress || []).slice(lastProgressLength);
+                lastProgressLength = (job.progress || []).length;
+                appendProgress(newLines);
+
+                if (job.status === 'done' || job.status === 'failed') {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                    setBusy(false);
+                    renderResult(job);
+                }
+            } catch (err) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                setBusy(false);
+                currentStep.textContent = 'Lỗi khi lấy tiến trình';
+                appendProgress([`[LỖI] ${err.message}`]);
+            }
+        }
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            clearInterval(pollTimer);
+            pollTimer = null;
+            lastProgressLength = 0;
+
+            progressLog.innerHTML = '<div class="empty-state">Đang khởi tạo job...</div>';
+            progressLog.classList.add('empty');
+            currentStep.textContent = 'Đang gửi yêu cầu...';
+            resultCard.classList.add('hidden');
+
+            setBusy(true);
+
+            const formData = new FormData();
+            formData.append('docs_url', docsInput.value.trim());
+
+            try {
+                const res = await fetch('/start_capture', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await res.json();
+                if (!data.ok) {
+                    throw new Error(data.error || 'Không tạo được job.');
+                }
+
+                progressLog.innerHTML = '';
+                currentStep.textContent = 'Đã tạo job, bắt đầu theo dõi tiến trình';
+
+                pollStatus(data.job_id);
+                pollTimer = setInterval(() => pollStatus(data.job_id), 1200);
+            } catch (err) {
+                setBusy(false);
+                currentStep.textContent = 'Không khởi động được tiến trình';
+                progressLog.innerHTML = `<div class="progress-item">[LỖI] ${err.message}</div>`;
+                progressLog.classList.remove('empty');
+            }
+        });
+    </script>
+</body>
+</html>
