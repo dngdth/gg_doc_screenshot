@@ -3,25 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Docs Screenshot</title>
+    <title>Document Page Screenshot</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container wide">
         <header>
-            <h1>📄 Google Docs Page Screenshot</h1>
-            <p class="subtitle">Nhập link Google Docs công khai → chụp ảnh từng trang thành PNG</p>
+            <h1>📄 Document Page Screenshot</h1>
+            <p class="subtitle">Google Docs, Scribd và Studocu dùng ba pipeline chụp riêng</p>
         </header>
 
         <div class="layout-grid">
             <section class="card">
                 <form id="capture-form">
-                    <label for="docs_url">🔗 Link Google Docs:</label>
+                    <label for="docs_url">🔗 Link Google Docs, Scribd hoặc Studocu:</label>
                     <input
                         type="url"
                         id="docs_url"
                         name="docs_url"
-                        placeholder="https://docs.google.com/document/d/xxxxxxx/edit"
+                        placeholder="Dán link Google Docs, Scribd hoặc Studocu"
                         required
                     >
                     <button type="submit" id="btn">📸 Bắt đầu chụp</button>
@@ -49,6 +49,10 @@
             <div id="result-error" class="error-box hidden"><p></p></div>
 
             <div class="info-row">
+                <span class="label">Nguồn:</span>
+                <strong id="result-provider">-</strong>
+            </div>
+            <div class="info-row">
                 <span class="label">Document ID:</span>
                 <code id="result-doc-id">-</code>
             </div>
@@ -70,7 +74,8 @@
         <section class="card notes">
             <h3>⚠️ Lưu ý</h3>
             <ul>
-                <li>Chỉ hỗ trợ tài liệu <strong>công khai</strong> hoặc tài khoản đang đăng nhập có quyền hợp lệ.</li>
+                <li>Google Docs, Scribd và Studocu được nhận diện và xử lý bằng logic riêng.</li>
+                <li>Chỉ chụp nội dung <strong>đang được phép hiển thị</strong> công khai hoặc bằng tài khoản đăng nhập hợp lệ.</li>
                 <li>App <strong>không bypass</strong> quyền truy cập.</li>
                 <li>Nếu thất bại, thư mục output có thể chứa file debug như <code>debug_dom.html</code> và <code>debug_full_page.png</code>.</li>
             </ul>
@@ -88,6 +93,7 @@
         const resultTitle = document.getElementById('result-title');
         const resultError = document.getElementById('result-error');
         const resultErrorText = resultError.querySelector('p');
+        const resultProvider = document.getElementById('result-provider');
         const resultDocId = document.getElementById('result-doc-id');
         const resultOutputDir = document.getElementById('result-output-dir');
         const resultPages = document.getElementById('result-pages');
@@ -125,6 +131,12 @@
             resultCard.classList.toggle('failure', !job.success);
 
             resultTitle.textContent = job.success ? '✅ Thành công' : '❌ Thất bại';
+            const providerNames = {
+                google_docs: 'Google Docs',
+                scribd: 'Scribd',
+                studocu: 'Studocu',
+            };
+            resultProvider.textContent = providerNames[job.provider] || job.provider || '-';
             resultDocId.textContent = job.doc_id || '-';
             resultOutputDir.textContent = job.output_dir || '-';
             resultPages.textContent = job.pages_captured || 0;
