@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Mở tài liệu bằng Chrome</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><main class="container"><section class="card">
+<h1>Chụp tài liệu bằng Chrome</h1>
+<p id="extension-status">Đang tìm tiện ích Document Page Screenshot…</p>
+<p>Khi tài liệu mở ra, hãy bấm biểu tượng <strong>Document Page Screenshot</strong> trên thanh tiện ích để bắt đầu. Giữ tab tài liệu hoạt động trong lúc chụp.</p>
+<details open><summary>Cài tiện ích một lần</summary><ol>
+<li>Mở <code>chrome://extensions</code> trong Chrome.</li>
+<li>Bật <strong>Developer mode</strong>, chọn <strong>Load unpacked</strong>.</li>
+<li>Chọn thư mục <code>{{ extension_dir }}</code>.</li>
+<li>Ghim tiện ích rồi tải lại trang này.</li>
+</ol></details>
+<p><a href="/">Trở về ứng dụng để xem tiến trình</a></p>
+</section></main></body></html>

@@ -11,9 +11,11 @@ from flask import Flask, jsonify, render_template, request
 
 from providers import capture_google_docs, capture_scribd, capture_studocu
 from providers.common import CaptureRuntime
+from providers.chrome import chrome_capture_blueprint
 
 
 app = Flask(__name__)
+app.register_blueprint(chrome_capture_blueprint)
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
@@ -23,6 +25,8 @@ CONFIG = {
     "headless": False,
     "timeout": 25000,
     "nav_timeout": 35000,
+    "chrome_executable": "",
+    "chrome_capture_timeout": 600,
     "viewport_width": 1920,
     "viewport_height": 1080,
     "scroll_pause": 0.6,
@@ -147,7 +151,10 @@ def extract_document_info(url: str) -> dict:
                 "error": None,
             }
 
-    if hostname == "studocu.com" or hostname.endswith(".studocu.com"):
+    if any(
+        hostname == domain or hostname.endswith(f".{domain}")
+        for domain in ("studocu.com", "studocu.vn")
+    ):
         path_parts = [part for part in parsed.path.split("/") if part]
         numeric_parts = [part for part in path_parts if part.isdigit()]
         if "document" in path_parts and numeric_parts:
@@ -168,7 +175,8 @@ def extract_document_info(url: str) -> dict:
             "Chỉ hỗ trợ URL Google Docs, Scribd hoặc Studocu. Ví dụ: "
             "https://docs.google.com/document/d/<id>/edit, "
             "https://www.scribd.com/document/<id>/<slug>, hoặc "
-            "https://www.studocu.com/<locale>/document/.../<id>"
+            "https://www.studocu.com/<locale>/document/.../<id> "
+            "hoặc https://www.studocu.vn/vn/document/.../<id>"
         ),
     }
 

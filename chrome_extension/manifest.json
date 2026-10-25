@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Document Page Screenshot",
+  "version": "1.0.1",
+  "description": "Chụp khung tài liệu Studocu trong tab Chrome đang được người dùng xem.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1:5000/*",
+    "https://*.studocu.vn/*",
+    "https://*.studocu.com/*"
+  ],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "Document Page Screenshot: bấm để chụp tài liệu"},
+  "content_scripts": [{
+    "matches": ["http://127.0.0.1:5000/chrome_capture/*"],
+    "js": ["bridge.js"]
+  }]
+}
