@@ -235,9 +235,10 @@ def discover_virtual_pages(
     position = 0.0
     iterations = 0
     max_iterations = int(runtime.config.get("max_scrolls", 120))
+    reached_end = False
 
     while iterations < max_iterations:
-        metrics = _set_scroll_top(page, scroll_selector, position)
+        _set_scroll_top(page, scroll_selector, position)
         page.wait_for_timeout(int(float(runtime.config.get("scroll_pause", 0.6)) * 1000))
         state = _visible_page_geometry(
             page,
@@ -270,7 +271,14 @@ def discover_virtual_pages(
             )
             for candidate in final_state["pages"]:
                 _merge_page_geometry(pages, candidate)
-            break
+            final_max_scroll = max(0.0, final_state["scrollHeight"] - final_state["clientHeight"])
+            if final_state["scrollTop"] >= final_max_scroll - 2:
+                reached_end = True
+                break
+            # Viewer vừa kéo dài vùng cuộn khi nạp thêm trang; tiếp tục quét.
+            position = min(final_max_scroll, final_state["scrollTop"] + max(300.0, final_state["clientHeight"] * 0.72))
+            iterations += 1
+            continue
 
         step = max(300.0, state["clientHeight"] * 0.72)
         next_position = min(max_scroll, current + step)
@@ -281,6 +289,11 @@ def discover_virtual_pages(
 
     _set_scroll_top(page, scroll_selector, 0)
     page.wait_for_timeout(500)
+    if not reached_end:
+        raise RuntimeError(
+            f"Quét chưa tới cuối tài liệu sau {max_iterations} lượt (giới hạn max_scrolls). "
+            "Hãy tăng max_scrolls nếu tài liệu dài; chưa thể xác nhận đã nhận diện đủ trang."
+        )
     pages.sort(key=lambda item: item["top"])
     return pages
 
@@ -294,6 +307,7 @@ def capture_virtual_page(
     *,
     min_width: int = 300,
     min_height: int = 400,
+    before_screenshot: Callable[[], None] | None = None,
 ) -> None:
     """Nạp lại đúng trang ảo theo vị trí tuyệt đối rồi chụp element của nó."""
     metrics = _set_scroll_top(page, scroll_selector, 0)
@@ -348,6 +362,8 @@ def capture_virtual_page(
     if not found:
         raise RuntimeError("Trang không còn được render tại vị trí đã nhận diện")
 
+    if before_screenshot is not None:
+        before_screenshot()
     page.locator('[data-capture-page-target="1"]').screenshot(
         path=str(file_path),
         type="png",

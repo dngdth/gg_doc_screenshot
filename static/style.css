@@ -88,6 +88,39 @@ button {
 button:hover { background: #1557b0; }
 button:disabled { background: #93b4f0; cursor: wait; }
 
+.pdf-panel {
+    margin-top: 22px;
+    padding: 18px;
+    border: 1px dashed #c8d7ed;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+
+.pdf-panel h2 { font-size: 1.05em; margin-bottom: 6px; }
+.pdf-status { font-size: 0.92em; color: #66758a; }
+.pdf-panel.processing { border-color: #1a73e8; }
+.pdf-panel.has-pdf { border-style: solid; border-color: #c5e3d1; background: #f6fcf8; }
+.pdf-files { display: grid; gap: 10px; }
+.pdf-download {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    margin-top: 12px;
+    border: 1px solid #b8d9c6;
+    border-radius: 8px;
+    background: #fff;
+    color: #174d32;
+    text-decoration: none;
+    transition: box-shadow .15s, border-color .15s;
+}
+.pdf-download:hover, .pdf-download:focus-visible { border-color: #18854b; box-shadow: 0 3px 12px #18854b1a; }
+.pdf-icon { flex: 0 0 auto; padding: 9px 7px; border-radius: 6px; background: #e6f4eb; font-size: .75em; font-weight: 800; }
+.pdf-info { flex: 1; min-width: 0; }
+.pdf-info strong { display: block; overflow-wrap: anywhere; font-size: .92em; }
+.pdf-details { display: block; color: #607568; font-size: .8em; margin-top: 4px; }
+.pdf-arrow { flex: 0 0 auto; font-size: 1.6em; }
+
 .loading { text-align: center; padding: 20px; }
 .loading.hidden { display: none; }
 .loading p { color: #666; margin-top: 10px; }

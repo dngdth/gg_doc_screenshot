@@ -4,6 +4,7 @@ from typing import Optional
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
+from document_processing import finish_capture_as_pdf
 
 from .common import (
     CaptureRuntime,
@@ -73,6 +74,7 @@ def capture_google_docs(
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
                 headless=runtime.config["headless"],
+                channel="chromium",
                 args=["--start-maximized", "--disable-blink-features=AutomationControlled"],
             )
             context = browser.new_context(
@@ -203,14 +205,7 @@ def capture_google_docs(
                     )
                     return
 
-                runtime.finish_job(
-                    job_id,
-                    True,
-                    f"Hoàn tất: đã chụp {total}/{total} trang Google Docs",
-                    files=files,
-                    pages_captured=len(files),
-                    output_dir=str(output_dir),
-                )
+                finish_capture_as_pdf(job_id, doc_id, "google_docs", output_dir, files, runtime)
             except PlaywrightTimeoutError:
                 save_debug_artifacts(page, output_dir)
                 runtime.finish_job(

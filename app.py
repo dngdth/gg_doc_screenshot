@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 
 from providers import capture_google_docs, capture_scribd, capture_studocu
 from providers.common import CaptureRuntime
@@ -22,7 +22,7 @@ OUTPUTS_DIR = BASE_DIR / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG = {
-    "headless": False,
+    "headless": os.environ.get("CAPTURE_HEADLESS", "true").strip().lower() not in {"0", "false", "no", "off"},
     "timeout": 25000,
     "nav_timeout": 35000,
     "chrome_executable": "",
@@ -62,6 +62,9 @@ def new_job(
             "output_dir": None,
             "files": [],
             "pages_captured": 0,
+            "pdf_file": None,
+            "pdf_pages": 0,
+            "pdf_size": 0,
             "success": False,
             "error": None,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -208,6 +211,9 @@ def start_capture():
     if not validation["ok"]:
         return jsonify({"ok": False, "error": validation["error"]}), 400
 
+    if validation["provider"] == "studocu" and CONFIG["headless"]:
+        return jsonify({"ok": False, "error": "Studocu đang tạm dừng ở chế độ chạy ngầm. Hiện hỗ trợ Google Docs và Scribd."}), 400
+
     doc_id = validation["doc_id"]
     provider = validation["provider"]
     target_url = validation["url"]
@@ -235,7 +241,61 @@ def status(job_id):
         job = JOBS.get(job_id)
         if not job:
             return jsonify({"ok": False, "error": "Không tìm thấy job."}), 404
-        return jsonify({"ok": True, "job": job})
+        return jsonify({"ok": True, "job": _public_job(job)})
+
+
+def _pdf_path(job: dict) -> Optional[Path]:
+    filename = job.get("pdf_file")
+    if job.get("status") != "done" or not job.get("success") or not isinstance(filename, str):
+        return None
+    if Path(filename).name != filename or Path(filename).suffix.lower() != ".pdf" or not job.get("output_dir"):
+        return None
+    path = (Path(job["output_dir"]) / filename).resolve()
+    if not path.is_relative_to(OUTPUTS_DIR.resolve()) or not path.is_file():
+        return None
+    return path
+
+
+def _pdf_metadata(job: dict) -> Optional[dict]:
+    path = _pdf_path(job)
+    if path is None:
+        return None
+    return {
+        "name": path.name,
+        "pages": job.get("pdf_pages", 0),
+        "size_bytes": path.stat().st_size,
+        "url": url_for("download_pdf", job_id=job["job_id"]),
+    }
+
+
+def _public_job(job: dict) -> dict:
+    private = {"output_dir", "files", "pdf_file", "pdf_pages", "pdf_size"}
+    result = {key: value for key, value in job.items() if key not in private}
+    result["pdf"] = _pdf_metadata(job)
+    return result
+
+
+@app.get("/pdfs")
+def ready_pdfs():
+    with JOBS_LOCK:
+        ready = [
+            {"job_id": job["job_id"], "provider": job["provider"], "pdf": pdf}
+            for job in reversed(list(JOBS.values()))
+            if (pdf := _pdf_metadata(job)) is not None
+        ]
+    return jsonify(ok=True, files=ready), 200, {"Cache-Control": "no-store"}
+
+
+@app.get("/download_pdf/<job_id>")
+def download_pdf(job_id):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        path = _pdf_path(job) if job else None
+    if path is None:
+        abort(404, description="PDF chưa sẵn sàng hoặc không còn tồn tại.")
+    response = send_file(path, mimetype="application/pdf", as_attachment=True, download_name=path.name, conditional=True)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 if __name__ == "__main__":
@@ -243,6 +303,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print("  Document Page Screenshot App")
     print("  http://127.0.0.1:5000")
+    print(f"  Browser mode: {'headless' if CONFIG['headless'] else 'windowed (debug)'}")
     print("=" * 50)
     app.run(
         debug=False,

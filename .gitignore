@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 outputs/
 .browser_profiles/
+/tmp/pdfs/

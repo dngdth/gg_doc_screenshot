@@ -10,22 +10,28 @@
     <div class="container wide">
         <header>
             <h1>📄 Document Page Screenshot</h1>
-            <p class="subtitle">Google Docs, Scribd và Studocu dùng ba pipeline chụp riêng</p>
+            <p class="subtitle">Chụp Google Docs và Scribd thành PDF, tải trực tiếp tại đây</p>
         </header>
 
         <div class="layout-grid">
             <section class="card">
                 <form id="capture-form">
-                    <label for="docs_url">🔗 Link Google Docs, Scribd hoặc Studocu:</label>
+                    <label for="docs_url">🔗 Link Google Docs hoặc Scribd:</label>
                     <input
                         type="url"
                         id="docs_url"
                         name="docs_url"
-                        placeholder="Dán link Google Docs, Scribd hoặc Studocu"
+                        placeholder="Dán link Google Docs hoặc Scribd"
                         required
                     >
                     <button type="submit" id="btn">📸 Bắt đầu chụp</button>
                 </form>
+
+                <section id="pdf-panel" class="pdf-panel" aria-labelledby="pdf-title">
+                    <h2 id="pdf-title">📄 File PDF của bạn</h2>
+                    <p id="pdf-status" class="pdf-status" role="status" aria-live="polite">PDF sẽ xuất hiện ở đây sau khi xử lý xong.</p>
+                    <div id="pdf-files" class="pdf-files"></div>
+                </section>
 
                 <div id="loading" class="loading hidden">
                     <div class="spinner"></div>
@@ -57,28 +63,20 @@
                 <code id="result-doc-id">-</code>
             </div>
             <div class="info-row">
-                <span class="label">Thư mục:</span>
-                <code id="result-output-dir">-</code>
-            </div>
-            <div class="info-row">
                 <span class="label">Số trang đã chụp:</span>
                 <strong id="result-pages">0</strong>
             </div>
 
-            <div class="files">
-                <h3>Danh sách file ảnh</h3>
-                <div id="file-grid" class="file-grid"></div>
-            </div>
         </section>
 
         <section class="card notes">
             <h3>⚠️ Lưu ý</h3>
             <ul>
-                <li>Studocu mở bằng Chrome thường. Cài tiện ích trong thư mục <code>chrome_extension</code> một lần, rồi bấm biểu tượng tiện ích trong tab tài liệu để chụp.</li>
+                <li>Google Docs và Scribd được xử lý ngầm trên máy chủ. Studocu đang tạm dừng ở chế độ chạy ngầm.</li>
                 <li>Google Docs, Scribd và Studocu được nhận diện và xử lý bằng logic riêng.</li>
                 <li>Chỉ chụp nội dung <strong>đang được phép hiển thị</strong> công khai hoặc bằng tài khoản đăng nhập hợp lệ.</li>
                 <li>App <strong>không bypass</strong> quyền truy cập.</li>
-                <li>Nếu thất bại, thư mục output có thể chứa file debug như <code>debug_dom.html</code> và <code>debug_full_page.png</code>.</li>
+                <li>Với Google Docs và Scribd, bấm ô PDF dưới nút bắt đầu để tải file sau khi xử lý xong.</li>
             </ul>
         </section>
     </div>
@@ -96,10 +94,12 @@
         const resultErrorText = resultError.querySelector('p');
         const resultProvider = document.getElementById('result-provider');
         const resultDocId = document.getElementById('result-doc-id');
-        const resultOutputDir = document.getElementById('result-output-dir');
         const resultPages = document.getElementById('result-pages');
-        const fileGrid = document.getElementById('file-grid');
         const docsInput = document.getElementById('docs_url');
+        const pdfPanel = document.getElementById('pdf-panel');
+        const pdfStatus = document.getElementById('pdf-status');
+        const pdfFiles = document.getElementById('pdf-files');
+        const renderedPdfs = new Set();
 
         let pollTimer = null;
         let lastProgressLength = 0;
@@ -126,6 +126,45 @@
             progressLog.scrollTop = progressLog.scrollHeight;
         }
 
+        function showPdf(job) {
+            if (!job.pdf || renderedPdfs.has(job.job_id)) return;
+            renderedPdfs.add(job.job_id);
+            const link = document.createElement('a');
+            link.className = 'pdf-download';
+            link.href = job.pdf.url;
+            link.download = job.pdf.name;
+            link.setAttribute('aria-label', `Tải ${job.pdf.name}`);
+            const icon = document.createElement('span');
+            icon.className = 'pdf-icon';
+            icon.textContent = 'PDF';
+            const info = document.createElement('span');
+            info.className = 'pdf-info';
+            const name = document.createElement('strong');
+            name.textContent = job.pdf.name;
+            const details = document.createElement('span');
+            details.className = 'pdf-details';
+            const mb = job.pdf.size_bytes / (1024 * 1024);
+            const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(job.pdf.size_bytes / 1024))} KB`;
+            details.textContent = `${job.pdf.pages} trang · ${size} · Bấm để tải xuống`;
+            info.append(name, details);
+            const arrow = document.createElement('span');
+            arrow.className = 'pdf-arrow';
+            arrow.textContent = '↓';
+            link.append(icon, info, arrow);
+            pdfFiles.prepend(link);
+            pdfPanel.classList.add('has-pdf');
+        }
+
+        async function loadPdfs() {
+            try {
+                const response = await fetch('/pdfs');
+                if (!response.ok) return;
+                const data = await response.json();
+                [...(data.files || [])].reverse().forEach(showPdf);
+                if (renderedPdfs.size) pdfStatus.textContent = 'PDF đã sẵn sàng. Bấm vào file để tải xuống.';
+            } catch (_) { /* Capture controls remain usable if the PDF list cannot be loaded. */ }
+        }
+
         function renderResult(job) {
             resultCard.classList.remove('hidden');
             resultCard.classList.toggle('success', job.success);
@@ -139,8 +178,14 @@
             };
             resultProvider.textContent = providerNames[job.provider] || job.provider || '-';
             resultDocId.textContent = job.doc_id || '-';
-            resultOutputDir.textContent = job.output_dir || '-';
             resultPages.textContent = job.pages_captured || 0;
+            showPdf(job);
+            if (job.pdf) {
+                pdfStatus.textContent = 'PDF đã sẵn sàng. Bấm vào file để tải xuống.';
+            } else if (!job.success) {
+                pdfStatus.textContent = 'Chưa tạo được PDF cho lần chụp này. Xem thông báo lỗi ở phần tiến trình.';
+            }
+            pdfPanel.classList.remove('processing');
 
             if (job.error) {
                 resultError.classList.remove('hidden');
@@ -150,13 +195,6 @@
                 resultErrorText.textContent = '';
             }
 
-            fileGrid.innerHTML = '';
-            (job.files || []).forEach(file => {
-                const span = document.createElement('span');
-                span.className = 'file-item';
-                span.textContent = '🖼️ ' + file;
-                fileGrid.appendChild(span);
-            });
         }
 
         async function pollStatus(jobId) {
@@ -171,6 +209,7 @@
                 const job = data.job;
                 currentStep.textContent = job.step || 'Đang xử lý...';
                 loadingText.textContent = job.step || 'Đang xử lý...';
+                if (job.status === 'building_pdf') pdfStatus.textContent = job.step;
 
                 const newLines = (job.progress || []).slice(lastProgressLength);
                 lastProgressLength = (job.progress || []).length;
@@ -188,6 +227,8 @@
                 setBusy(false);
                 currentStep.textContent = 'Lỗi khi lấy tiến trình';
                 appendProgress([`[LỖI] ${err.message}`]);
+                pdfPanel.classList.remove('processing');
+                pdfStatus.textContent = 'Không lấy được trạng thái xử lý PDF. Kiểm tra ứng dụng rồi thử lại.';
             }
         }
 
@@ -202,6 +243,8 @@
             progressLog.classList.add('empty');
             currentStep.textContent = 'Đang gửi yêu cầu...';
             resultCard.classList.add('hidden');
+            pdfPanel.classList.add('processing');
+            pdfStatus.textContent = 'Đang xử lý tài liệu. PDF sẽ xuất hiện tại đây khi hoàn tất.';
 
             setBusy(true);
 
@@ -222,15 +265,19 @@
                 progressLog.innerHTML = '';
                 currentStep.textContent = 'Đã tạo job, bắt đầu theo dõi tiến trình';
 
-                pollStatus(data.job_id);
                 pollTimer = setInterval(() => pollStatus(data.job_id), 1200);
+                pollStatus(data.job_id);
             } catch (err) {
                 setBusy(false);
                 currentStep.textContent = 'Không khởi động được tiến trình';
-                progressLog.innerHTML = `<div class="progress-item">[LỖI] ${err.message}</div>`;
-                progressLog.classList.remove('empty');
+                progressLog.innerHTML = '';
+                appendProgress([`[LỖI] ${err.message}`]);
+                pdfPanel.classList.remove('processing');
+                pdfStatus.textContent = 'Chưa tạo được PDF. Hãy kiểm tra link rồi thử lại.';
             }
         });
+
+        loadPdfs();
     </script>
 </body>
 </html>

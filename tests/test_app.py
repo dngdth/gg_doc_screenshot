@@ -99,6 +99,7 @@ class StartCaptureTests(unittest.TestCase):
         url = "https://www.studocu.vn/vn/document/truong-dai-hoc/mon-hoc/tai-lieu/127987574"
         output_dir = Path("outputs/test-studocu-vn")
         with (
+            patch.dict("app.CONFIG", {"headless": False}),
             patch("app.make_output_dir", return_value=output_dir) as make_output_dir,
             patch("app.JOBS", {}),
             patch("app.threading.Thread") as thread,
@@ -118,6 +119,15 @@ class StartCaptureTests(unittest.TestCase):
             thread.return_value.start.assert_called_once_with()
             job = client.get(f"/status/{data['job_id']}").get_json()["job"]
             self.assertEqual(job["provider"], "studocu")
+
+    def test_headless_mode_does_not_open_native_studocu_chrome(self):
+        with patch.dict("app.CONFIG", {"headless": True}), patch("app.threading.Thread") as thread, app.test_client() as client:
+            response = client.post('/start_capture', data={
+                'docs_url': 'https://www.studocu.vn/vn/document/example/12345',
+            })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('tạm dừng', response.get_json()['error'])
+        thread.assert_not_called()
 
 
 if __name__ == "__main__":

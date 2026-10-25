@@ -2,8 +2,10 @@ import time
 import traceback
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
+from document_processing import finish_capture_as_pdf
 
 from .common import (
     CaptureRuntime,
@@ -84,6 +86,11 @@ def _wait_for_page_content(page, timeout_ms: int = 10000) -> bool:
     return False
 
 
+def _require_page_content(page, timeout_ms: int) -> None:
+    if not _wait_for_page_content(page, timeout_ms):
+        raise RuntimeError("Nội dung trang Scribd chưa tải xong; không lưu khung trống như trang đã chụp.")
+
+
 def capture_scribd(
     job_id: str,
     doc_id: str,
@@ -92,7 +99,6 @@ def capture_scribd(
     runtime: CaptureRuntime,
 ) -> None:
     """Pipeline riêng cho Scribd."""
-    del doc_id
     files: list[str] = []
     runtime.update_job(
         job_id,
@@ -105,6 +111,7 @@ def capture_scribd(
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
                 headless=runtime.config["headless"],
+                channel="chromium",
                 args=["--start-maximized", "--disable-blink-features=AutomationControlled"],
             )
             context = browser.new_context(
@@ -121,11 +128,40 @@ def capture_scribd(
 
             try:
                 runtime.update_job(job_id, f"Đang mở Scribd: {target_url}", status="running")
-                page.goto(
-                    target_url,
-                    wait_until="domcontentloaded",
-                    timeout=runtime.config["nav_timeout"],
-                )
+                try:
+                    response = page.goto(
+                        target_url,
+                        wait_until="domcontentloaded",
+                        timeout=runtime.config["nav_timeout"],
+                    )
+                except PlaywrightError as navigation_error:
+                    if runtime.config["headless"] and "ERR_HTTP_RESPONSE_CODE_FAILURE" in str(navigation_error):
+                        save_debug_artifacts(page, output_dir)
+                        runtime.finish_job(
+                            job_id, False, "Scribd từ chối yêu cầu khi chạy ngầm",
+                            error=(
+                                "Scribd không trả về trang tài liệu hợp lệ trong chế độ chạy ngầm "
+                                "(ERR_HTTP_RESPONSE_CODE_FAILURE). Chưa thể chụp hoặc tạo PDF cho link này."
+                            ),
+                            files=files, pages_captured=0, output_dir=str(output_dir),
+                        )
+                        return
+                    raise
+                if response is not None and response.status >= 400:
+                    save_debug_artifacts(page, output_dir)
+                    runtime.finish_job(
+                        job_id,
+                        False,
+                        f"Scribd từ chối truy cập (HTTP {response.status})",
+                        error=(
+                            f"Scribd trả HTTP {response.status} trước khi tải trình đọc. "
+                            "Chưa thể kiểm tra hoặc chụp các trang của tài liệu này."
+                        ),
+                        files=files,
+                        pages_captured=0,
+                        output_dir=str(output_dir),
+                    )
+                    return
                 page.wait_for_timeout(3000)
                 _accept_cookies(page, job_id, runtime, timeout_ms=4000)
 
@@ -190,12 +226,9 @@ def capture_scribd(
                             scroll_selector,
                             geometry,
                             file_path,
-                        )
-                        _wait_for_page_content(page)
-                        # Chụp lại sau khi nội dung lazy-load đã sẵn sàng.
-                        page.locator('[data-capture-page-target="1"]').screenshot(
-                            path=str(file_path),
-                            type="png",
+                            before_screenshot=lambda: _require_page_content(
+                                page, int(runtime.config.get("page_content_timeout", 10000))
+                            ),
                         )
                         if file_path.exists() and file_path.stat().st_size > 0:
                             files.append(file_name)
@@ -216,15 +249,13 @@ def capture_scribd(
                 success = len(files) == total
                 if not success:
                     save_debug_artifacts(page, output_dir)
-                runtime.finish_job(
-                    job_id,
-                    success,
-                    f"Đã chụp {len(files)}/{total} trang Scribd",
-                    error=None if success else "Một số trang Scribd không tải hoặc không chụp được.",
-                    files=files,
-                    pages_captured=len(files),
-                    output_dir=str(output_dir),
-                )
+                    runtime.finish_job(
+                        job_id, False, f"Đã chụp {len(files)}/{total} trang Scribd",
+                        error="Một số trang Scribd không tải hoặc không chụp được.",
+                        files=files, pages_captured=len(files), output_dir=str(output_dir),
+                    )
+                    return
+                finish_capture_as_pdf(job_id, doc_id, "scribd", output_dir, files, runtime)
             except PlaywrightTimeoutError:
                 save_debug_artifacts(page, output_dir)
                 runtime.finish_job(

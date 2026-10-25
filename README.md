@@ -1,8 +1,10 @@
 # 📄 Document Page Screenshot Tool
 
-Ứng dụng nhận link Google Docs, Scribd hoặc Studocu và lưu từng trang thành PNG.
-Google Docs/Scribd dùng Playwright; Studocu mở bằng Chrome đã cài trên máy và chụp
-qua tiện ích trong phiên Chrome của bạn.
+Ứng dụng nhận link Google Docs hoặc Scribd, chụp từng trang rồi ghép thành một PDF
+để tải trực tiếp trên giao diện web. Ảnh và PDF được giữ nội bộ trong `outputs/`.
+Google Docs/Scribd dùng Playwright chạy ngầm trên máy chủ. Người dùng chỉ nhận
+tiến trình và PDF qua web; không cần cài Playwright/Chrome ở phía client.
+Studocu đang tạm dừng trong chế độ chạy ngầm.
 
 ## Tính năng
 
@@ -18,12 +20,22 @@ qua tiện ích trong phiên Chrome của bạn.
 - Lưu ảnh dạng `page_001.png`, `page_002.png`, ... vào thư mục riêng trong
   `outputs/`.
 - Hiển thị tiến trình và lỗi theo thời gian thực trên giao diện web.
+- Google Docs và Scribd cùng dùng `document_processing/pdf_export.py` để ghép ảnh
+  theo số trang thành PDF, giữ nguyên tỉ lệ và độ phân giải ảnh.
+- Ô **File PDF của bạn** nằm ngay dưới nút **Bắt đầu chụp**. Khi ghép xong, ô hiện
+  tên file, số trang và dung lượng; bấm vào file để tải. Các PDF đã tạo trong phiên
+  ứng dụng vẫn hiện khi tải lại trang. Cần giữ ứng dụng chạy để tải file.
 - Studocu mở Chrome bằng hệ điều hành, dùng phiên đăng nhập của Chrome đang chạy.
   Pipeline Studocu không khởi tạo Playwright, không tạo hồ sơ riêng hay mở cổng debug.
 - Tiện ích nhận diện khung `.pf`, thu nhỏ vừa màn hình, cuộn và chụp sau một nhịp
   render 700ms. Ảnh được cắt theo khung giấy và gửi về ứng dụng trên máy.
 - Tiến trình Studocu vẫn hiển thị tại ứng dụng và lưu ảnh trong `outputs/`.
 - Google Docs/Scribd lưu `debug_dom.html` và `debug_full_page.png` khi gặp lỗi.
+- Nếu đạt giới hạn `CONFIG["max_scrolls"]` mà chưa tới cuối tài liệu, pipeline
+  báo lỗi thay vì báo thành công với danh sách trang thiếu. Tăng giá trị này cho
+  tài liệu dài nếu cần.
+- Scribd chờ nội dung trang trước khi lưu PNG; khung chưa tải xong không được tính
+  là trang đã chụp. Lỗi HTTP từ website được báo riêng trước bước tìm trình đọc.
 
 ## Giới hạn
 
@@ -50,6 +62,48 @@ python app.py
 ```
 
 Mở <http://127.0.0.1:5000>, dán URL tài liệu rồi chọn **Bắt đầu chụp**.
+Mặc định trình duyệt chạy ngầm (`headless=True`), không mở cửa sổ Chrome.
+Với Google Docs/Scribd, chờ bước **Đang ghép … trang thành PDF** hoàn tất rồi bấm
+file trong ô PDF dưới nút chụp. Nếu thiếu trang hoặc ghép PDF gặp lỗi, ứng dụng
+báo thất bại và không cung cấp file PDF chưa hoàn chỉnh.
+
+Sau khi cập nhật bản này, cài thư viện mới và khởi động lại ứng dụng:
+
+```powershell
+pip install -r requirements.txt
+python app.py
+```
+
+Để chạy kiểm thử, cài thêm `requirements-dev.txt` rồi chạy
+`python -m unittest discover -s tests`.
+
+## Chạy ngầm và chuẩn bị máy chủ
+
+Mặc định `CAPTURE_HEADLESS=true`. Cả hai pipeline dùng chế độ headless mới của
+Chromium để render, cuộn và chụp trên máy chủ. Không cần màn hình hay desktop.
+Khi cài trên máy chủ Linux, cài cả trình duyệt và các thư viện hệ thống:
+
+```bash
+pip install -r requirements.txt
+python -m playwright install --with-deps chromium
+```
+
+Tham khảo [tài liệu trình duyệt Playwright](https://playwright.dev/python/docs/browsers).
+
+Để bật cửa sổ khi debug trên máy cá nhân (PowerShell):
+
+```powershell
+$env:CAPTURE_HEADLESS = "false"
+python app.py
+```
+
+Để trở lại chạy ngầm, đặt `$env:CAPTURE_HEADLESS = "true"` rồi khởi động lại ứng dụng.
+Không tự chuyển sang chế độ có cửa sổ nếu website từ chối truy cập headless;
+ứng dụng sẽ báo lỗi để tránh tạo kết quả thiếu. Website vẫn có thể giới hạn
+truy cập từ máy chủ hoặc yêu cầu xác minh.
+
+Hiện trạng thái job lưu trong bộ nhớ tiến trình. Khi deploy cần chạy một worker
+hoặc bổ sung kho trạng thái dùng chung trước khi mở rộng sang nhiều worker.
 
 ## Chụp Studocu bằng Chrome đang dùng
 
